@@ -1,0 +1,4 @@
+FROM openjdk:8
+
+RUN apt-get update && apt-get install curl -y
+RUN curl -L http://apache.cs.utah.edu/kafka/1.1.1/kafka_2.12-1.1.1.tgz | tar -xz -C /opt/ 
