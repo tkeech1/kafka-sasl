@@ -17,8 +17,6 @@ run-zk: prune
 
 show-zk-acl: prune
 	docker run -it \
-	-v $(PWD)/jaas.conf:/opt/zookeeper-3.4.13/conf/jaas.conf \
-	-v $(PWD)/client-java.env:/opt/zookeeper-3.4.13/conf/java.env \
 	--workdir /opt/zookeeper-3.4.13/ --network host --name client zookeeper:latest /bin/bash -c "/opt/zookeeper-3.4.13/bin/zkCli.sh getAcl /brokers"
 
 run-kafka: prune
@@ -28,5 +26,10 @@ run-kafka: prune
 	-e KAFKA_OPTS="-Djava.security.auth.login.config=/opt/kafka_2.12-1.1.1/config/jaas.conf" \
 	--workdir /opt/kafka_2.12-1.1.1/ --network host -p 9092:9092 --name kafka kafka:latest /bin/bash -c "bin/kafka-server-start.sh config/server.properties"
 
+kafka-client: prune
+	# KAFKA_OPTS env var is needed to authenticate to Zookeeper
+	docker run -it \
+	-v $(PWD)/jaas.conf:/opt/kafka_2.12-1.1.1/config/jaas.conf -e KAFKA_OPTS="-Djava.security.auth.login.config=/opt/kafka_2.12-1.1.1/config/jaas.conf" \
+	--workdir /opt/kafka_2.12-1.1.1/ --network host --name kclient kafka:latest /bin/bash
 
 	
