@@ -1,7 +1,6 @@
 ### URLs & Ports
 
-**Zookeeper** - localhost:2181
-
+* **Zookeeper** - localhost:2181
 * **Zookeeper Metrics** - [http://localhost:7070](http://localhost:7070)
 * **Zoo Navigator Web** - [http://localhost:8001](http://localhost:8001)
 * **Zoo Navigator API** - [http://localhost:9001](http://localhost:9001)
