@@ -11,7 +11,7 @@
 * **Prometheus (not included in this repo)** - http://PROMETHEUS_SERVER:9090
 * **Grafana (not included in this repo)** - http://GRAFANA_SERVER:3000
 
-###Helpful links for configuring Kafka to authenticate to Zookeeper using SASL:
+###Helpful links for configuring Kafka to authenticate to Zookeeper using SASL
 
 * [Confluent 2.0 Docs](https://docs.confluent.io/2.0.0/kafka/zookeeper-authentication.html)
 * [Zookeeper Client Server Mutual Authentication](https://cwiki.apache.org/confluence/display/ZOOKEEPER/Client-Server+mutual+authentication)
