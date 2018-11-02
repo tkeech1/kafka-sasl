@@ -71,6 +71,7 @@ run-kafka: prune
 	-v $(PWD)/server.0.properties:/opt/kafka_2.12-1.1.1/config/server.properties \
 	-v $(PWD)/jaas.conf:/opt/kafka_2.12-1.1.1/config/jaas.conf \
 	-v $(PWD)/kafka_prom.yml:/opt/kafka_2.12-1.1.1/config/kafka_prom.yml \
+	-v $(PWD)/client-ssl.properties:/opt/kafka_2.12-1.1.1/config/client-ssl.properties \
 	-v /opt/kafka0_data:/tmp/kafka-logs \
 	-e KAFKA_OPTS="-Djava.security.auth.login.config=/opt/kafka_2.12-1.1.1/config/jaas.conf -javaagent:/opt/jmx_prometheus_javaagent-0.3.0.jar=7071:/opt/kafka_2.12-1.1.1/config/kafka_prom.yml" \
 	-e JMX_PORT=9096 \
@@ -79,6 +80,7 @@ run-kafka: prune
 	-v $(PWD)/server.1.properties:/opt/kafka_2.12-1.1.1/config/server.properties \
 	-v $(PWD)/jaas.conf:/opt/kafka_2.12-1.1.1/config/jaas.conf \
 	-v $(PWD)/kafka_prom.yml:/opt/kafka_2.12-1.1.1/config/kafka_prom.yml \
+	-v $(PWD)/client-ssl.properties:/opt/kafka_2.12-1.1.1/config/client-ssl.properties \
 	-v /opt/kafka1_data:/tmp/kafka-logs \
 	-e KAFKA_OPTS="-Djava.security.auth.login.config=/opt/kafka_2.12-1.1.1/config/jaas.conf -javaagent:/opt/jmx_prometheus_javaagent-0.3.0.jar=7071:/opt/kafka_2.12-1.1.1/config/kafka_prom.yml" \
 	-e JMX_PORT=9096 \
@@ -87,6 +89,7 @@ run-kafka: prune
 	-v $(PWD)/server.2.properties:/opt/kafka_2.12-1.1.1/config/server.properties \
 	-v $(PWD)/jaas.conf:/opt/kafka_2.12-1.1.1/config/jaas.conf \
 	-v $(PWD)/kafka_prom.yml:/opt/kafka_2.12-1.1.1/config/kafka_prom.yml \
+	-v $(PWD)/client-ssl.properties:/opt/kafka_2.12-1.1.1/config/client-ssl.properties \
 	-v /opt/kafka2_data:/tmp/kafka-logs \
 	-e KAFKA_OPTS="-Djava.security.auth.login.config=/opt/kafka_2.12-1.1.1/config/jaas.conf -javaagent:/opt/jmx_prometheus_javaagent-0.3.0.jar=7071:/opt/kafka_2.12-1.1.1/config/kafka_prom.yml" \
 	-e JMX_PORT=9096 \
@@ -95,8 +98,14 @@ run-kafka: prune
 run-kafkaclient: prune
 	# KAFKA_OPTS env var is needed to authenticate to Zookeeper
 	docker run -it \
-	-v $(PWD)/jaas.conf:/opt/kafka_2.12-1.1.1/config/jaas.conf -e KAFKA_OPTS="-Djava.security.auth.login.config=/opt/kafka_2.12-1.1.1/config/jaas.conf" \
+	-v $(PWD)/jaas.conf:/opt/kafka_2.12-1.1.1/config/jaas.conf \
+	-v $(PWD)/client-ssl.properties:/opt/kafka_2.12-1.1.1/config/client-ssl.properties \
+	-e KAFKA_OPTS="-Djava.security.auth.login.config=/opt/kafka_2.12-1.1.1/config/jaas.conf" \
 	--workdir /opt/kafka_2.12-1.1.1/ --network knet --name kclient kafka:latest /bin/bash
+	# to test producer with SSL
+	#./bin/kafka-console-producer.sh --broker-list kafka0:9093 --topic test --producer.config config/client-ssl.properties
+	# to test consumer with SSL
+	#./bin/kafka-console-consumer.sh --bootstrap-server kafka1:9093 --topic test --consumer.config config/client-ssl.properties --from-beginning
 
 stop-kafkaclient: 
 	docker stop client || true && docker rm client || true
