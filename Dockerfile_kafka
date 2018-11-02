@@ -16,21 +16,35 @@ WORKDIR /opt/
 
 # create keystore for broker
 RUN keytool -keystore server.keystore.jks -alias localhost -validity 999 -genkey -keyalg RSA -dname "CN=example.com, OU=ID, O=test, L=test, S=test, C=GB" -storepass keystorepassword -keypass keystorekeypassword
-# create CA
+# create keystore for client
+RUN keytool -keystore client.keystore.jks -alias localhost -validity 999 -genkey -keyalg RSA -dname "CN=example.com, OU=ID, O=test, L=test, S=test, C=GB" -storepass clientkeystorepassword -keypass clientkeystorekeypassword
+# create CA to sign all certificates
 RUN openssl req -new -x509 -keyout ca-key -out ca-cert -days 365 -passout pass:capassword -subj "/C=GB/CN=test"
-# import CA cert to client's truststore
+# import CA cert to client's truststore - needed for client SSL
 RUN keytool -keystore client.truststore.jks -alias CARoot -import -file ca-cert -storepass clienttruststorepassword -noprompt
 # import the CA cert into the broker's trust store (needed to verify client keys signed by this CA)
 RUN keytool -keystore server.truststore.jks -alias CARoot -import -file ca-cert -storepass servertruststorepassword -noprompt
 
 # next need to sign the keys
-# first export the keystore certs to a file
+# first export the brokers keystore certs to a file
 RUN keytool -keystore server.keystore.jks -alias localhost -certreq -file cert-file -storepass keystorepassword -keypass keystorekeypassword
-# sign the certificate with the CA
+#  export the client keystore certs to a file
+RUN keytool -keystore client.keystore.jks -alias localhost -certreq -file client-cert-file -storepass clientkeystorepassword -keypass clientkeystorekeypassword
+# sign the broker/client certificates with the CA
 RUN openssl x509 -req -CA ca-cert -CAkey ca-key -in cert-file -out cert-signed -days 999 -CAcreateserial -passin pass:capassword
+RUN openssl x509 -req -CA ca-cert -CAkey ca-key -in client-cert-file -out client-cert-signed -days 999 -CAcreateserial -passin pass:capassword
+
 # import both the certificate of the CA and the signed certificate into the keystore:
 RUN keytool -keystore server.keystore.jks -alias CARoot -import -file ca-cert -storepass keystorepassword -noprompt
 RUN keytool -keystore server.keystore.jks -alias localhost -import -file cert-signed -storepass keystorepassword -noprompt -keypass keystorekeypassword
+# import the client certs into the broker keystore
+RUN keytool -keystore server.keystore.jks -alias client -import -file client-cert-signed -storepass keystorepassword -noprompt -keypass keystorekeypassword
+
+# import both the certificate of the CA and the signed certificate into the client keystore:
+RUN keytool -keystore client.keystore.jks -alias CARoot -import -file ca-cert -storepass clientkeystorepassword -noprompt
+RUN keytool -keystore client.keystore.jks -alias broker -import -file cert-signed -storepass clientkeystorepassword -noprompt -keypass clientkeystorekeypassword
+# import the client certs into the client keystore
+RUN keytool -keystore client.keystore.jks -alias localhost -import -file client-cert-signed -storepass clientkeystorepassword -noprompt -keypass clientkeystorekeypassword
 
 # end create keys
 
