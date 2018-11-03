@@ -136,7 +136,7 @@ func createTopic(topic string, numParts, replicationFactor int) {
 func main() {
 	producerWorkers := 10
 	//consumerWorkers := 10
-	messagesPerWorker := 5
+	messagesPerWorker := 10000
 
 	/*results := make(chan string)
 	var wg sync.WaitGroup
