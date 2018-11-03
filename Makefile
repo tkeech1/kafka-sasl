@@ -4,6 +4,9 @@ build-zk:
 
 build-kafka:
 	docker build -f Dockerfile_kafka -t kafka .
+	# copy the cert files out of the kafka image so they can be mounted into the go client container
+	docker run -v $$PWD:/opt/mount --rm --entrypoint cp kafka /opt/client.cer.pem /opt/client.key.pem /opt/server.cer.pem /opt/mount/
+	sudo chmod 755 client.cer.pem client.key.pem server.cer.pem
 
 build-burrow:
 	docker build -f Dockerfile_burrow -t burrow .
@@ -20,9 +23,9 @@ create-network:
 	docker network create knet
 
 destroy-network:
-	docker network rm -f knet
+	docker network rm knet || true
 
-run-zk: prune	
+run-zk: prune destroy-network create-network
 	docker run -d \
 	-v $(PWD)/zoo.cfg:/opt/zookeeper-3.4.13/conf/zoo.cfg \
 	-v $(PWD)/jaas.conf:/opt/zookeeper-3.4.13/conf/jaas.conf \
@@ -144,7 +147,9 @@ run-zoo-navigator-api: stop-zoo-navigator prune
 	--network knet -p 9001:9001 --name zoonavigatorapi elkozmon/zoonavigator-api:0.5.0
 
 run-all: run-zk run-kafka run-kafkamanager run-burrow run-zoo-navigator-web
-stop-all: stop-kafka stop-zk stop-kafkaclient stop-kafkamanager stop-burrow stop-zoo-navigator prune
+
+stop-all: stop-kafka stop-zk stop-kafkaclient stop-kafkamanager stop-burrow stop-zoo-navigator prune destroy-network clean
+
 clean: 
 	sudo rm -rf /opt/zoo1_data/* 
 	sudo rm -rf /opt/zoo2_data/* 
@@ -152,3 +157,13 @@ clean:
 	sudo rm -rf /opt/kafka0_data/* 
 	sudo rm -rf /opt/kafka1_data/* 
 	sudo rm -rf /opt/kafka2_data/* 
+
+go-client-image:
+	docker build -f Dockerfile_go -t kafkaload .
+
+go-client: go-client-image
+	docker run -it --rm --network knet \
+	-v $(PWD)/client-cer.pem:/go/client-cer.pem \
+	-v $(PWD)/client-key.pem:/go/client-key.pem \
+	-v $(PWD)/server-cer.pem:/go/server-cer.pem \
+	kafkaload

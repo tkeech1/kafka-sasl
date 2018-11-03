@@ -46,6 +46,14 @@ RUN keytool -keystore client.keystore.jks -alias broker -import -file cert-signe
 # import the client certs into the client keystore
 RUN keytool -keystore client.keystore.jks -alias localhost -import -file client-cert-signed -storepass clientkeystorepassword -noprompt -keypass clientkeystorekeypassword
 
+# create the keystore for the go client - extract the CA cert
+RUN keytool -importkeystore -srckeystore server.truststore.jks -destkeystore server.p12 -deststoretype PKCS12 -srcstorepass servertruststorepassword -deststorepass goclientpass -noprompt
+RUN openssl pkcs12 -in server.p12 -nokeys -out server.cer.pem -passin pass:goclientpass
+
+# convert client keystore to PKCS12 to be usable from Go
+RUN keytool -importkeystore -srckeystore server.keystore.jks -alias localhost -destkeystore client.p12 -deststoretype PKCS12 -srcstorepass keystorepassword -deststorepass goclientpass -srckeypass keystorekeypassword -destkeypass goclientpass -noprompt
+RUN openssl pkcs12 -in client.p12 -nokeys -out client.cer.pem -passin pass:goclientpass
+RUN openssl pkcs12 -in client.p12 -nodes -nocerts -out client.key.pem -passin pass:goclientpass
 # end create keys
 
 WORKDIR /
