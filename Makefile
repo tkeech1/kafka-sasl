@@ -125,8 +125,11 @@ stop-kafkamanager:
 run-burrow: prune
 	docker run -d \
 	-v $(PWD)/burrow.toml:/etc/burrow/burrow.toml \
+	-v $(PWD)/client.cer.pem:/etc/burrow/client-cer.pem \
+	-v $(PWD)/client.key.pem:/etc/burrow/client-key.pem \
+	-v $(PWD)/server.cer.pem:/etc/burrow/server-cer.pem \
 	--network knet -p 8000:8000 --name burrow burrow:latest
-
+	
 stop-burrow: 
 	docker stop burrow || true && docker rm burrow || true
 

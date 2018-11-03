@@ -5,16 +5,18 @@ root-path="/burrow"
 
 [cluster.local]
 class-name="kafka"
-servers=[ "kafka0:9092","kafka1:9092","kafka2:9092" ]
+servers=[ "kafka0:9093","kafka1:9093","kafka2:9093" ]
 topic-refresh=60
 offset-refresh=30
+client-profile="test"
 
 [consumer.local]
 class-name="kafka"
 cluster="local"
-servers=[ "kafka0:9092","kafka1:9092","kafka2:9092" ]
+servers=[ "kafka0:9093","kafka1:9093","kafka2:9093" ]
 group-blacklist="^(console-consumer-|python-kafka-consumer-).*$"
 group-whitelist=""
+client-profile="test"
 
 [consumer.local_zk]
 class-name="kafka_zk"
@@ -24,6 +26,17 @@ servers=[ "zoo1:2181","zoo2:2181","zoo3:2181" ]
 zookeeper-timeout=30
 group-blacklist="^(console-consumer-|python-kafka-consumer-).*$"
 group-whitelist=""
+client-profile="test"
 
 [httpserver.default]
 address=":8000"
+
+[client-profile.test]
+tls="tlsonly"
+
+[tls.tlsonly]
+certfile="/etc/burrow/client-cer.pem"
+keyfile="/etc/burrow/client-key.pem"
+cafile="/etc/burrow/server-cer.pem"
+noverify=true
+

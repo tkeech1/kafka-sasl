@@ -1,1 +1,3 @@
 *.pem
+ca-cert
+client-cert*
