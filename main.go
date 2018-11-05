@@ -4,12 +4,14 @@ import (
 	"context"
 	"fmt"
 	"os"
+	"strconv"
 	"time"
 
 	"github.com/confluentinc/confluent-kafka-go/kafka"
 )
 
-func produce(topic string, messages int) {
+func produce(topic string, messages, startid int) {
+
 	p, err := kafka.NewProducer(&kafka.ConfigMap{
 		"bootstrap.servers":        "kafka0:9093,kafka1:9093,kafka2:9093",
 		"security.protocol":        "ssl",
@@ -25,27 +27,39 @@ func produce(topic string, messages int) {
 
 	// Delivery report handler for produced messages
 	go func() {
+		counter := 0
 		for e := range p.Events() {
 			switch ev := e.(type) {
 			case *kafka.Message:
 				if ev.TopicPartition.Error != nil {
 					fmt.Printf("Delivery failed: %v\n", ev.TopicPartition)
 				} else {
-					fmt.Printf("Delivered message to %v\n", ev.TopicPartition)
+					//fmt.Printf("Delivered message to %v\n", ev.TopicPartition)
+					counter = counter + 1
 				}
+			default:
+				fmt.Printf("ERROR: %v\n", ev)
 			}
 		}
+		fmt.Printf("delivered %d \n", counter)
 	}()
 
 	// Produce messages to topic (asynchronously)
 	for i := 0; i < messages; i++ {
 		//for _, word := range []string{"Welcome", "to", "the", "Confluent", "Kafka", "Golang", "client", "Welcome", "to", "the", "Confluent", "Kafka", "Golang", "client"} {
+		messageNumber := strconv.Itoa(startid + i)
 		p.Produce(&kafka.Message{
 			TopicPartition: kafka.TopicPartition{Topic: &topic, Partition: kafka.PartitionAny},
-			Value:          []byte("test message"),
+			Value:          []byte("testMessage " + messageNumber),
 		}, nil)
+		//fmt.Println("Producing message " + messageNumber)
+		// the default value of queue.buffering.max.ms is 100,000 messages so we need to flush when sending more than 100K messages
+		if i%99999 == 0 {
+			p.Flush(15 * 1000)
+		}
 	}
 
+	fmt.Println("Stopping worker... ")
 	// Wait for message deliveries before shutting down
 	p.Flush(15 * 1000)
 }
@@ -69,17 +83,38 @@ func consume(topic string) {
 
 	c.SubscribeTopics([]string{topic, "^aRegex.*[Tt]opic"}, nil)
 
-	i := 0
-	for {
-		msg, err := c.ReadMessage(-1)
-		if err == nil {
-			fmt.Printf("Message on %s: %s, %s\n", msg.TopicPartition, string(msg.Value), i)
-			i++
-		} else {
-			// The client will automatically try to recover from all errors.
-			fmt.Printf("Consumer error: %v (%v), %s\n", err, msg, i)
+	counter := 0
+
+	run := true
+
+	for run == true {
+		select {
+		default:
+			ev := c.Poll(100)
+			if ev == nil {
+				continue
+			}
+
+			switch e := ev.(type) {
+			case *kafka.Message:
+				//fmt.Printf("%% Message on %s: %s\n", e.TopicPartition, string(e.Value))
+				//if e.Headers != nil {
+				//	fmt.Printf("%% Headers: %v\n", e.Headers)
+				//}
+				counter = counter + 1
+			case kafka.PartitionEOF:
+				fmt.Printf("Reached %v\n", e)
+				fmt.Printf("  consumed %d \n", counter)
+			case kafka.Error:
+				fmt.Fprintf(os.Stderr, "%% Error: %v\n", e)
+				run = false
+			default:
+				fmt.Printf("Ignored %v\n", e)
+			}
 		}
 	}
+
+	fmt.Printf("Closing consumer\n")
 }
 
 func createTopic(topic string, numParts, replicationFactor int) {
@@ -98,6 +133,7 @@ func createTopic(topic string, numParts, replicationFactor int) {
 		fmt.Printf("Failed to create Admin client: %s\n", err)
 		os.Exit(1)
 	}
+	defer a.Close()
 
 	// Contexts are used to abort or limit the amount of time
 	// the Admin call blocks waiting for a result.
@@ -110,7 +146,7 @@ func createTopic(topic string, numParts, replicationFactor int) {
 	if err != nil {
 		panic("ParseDuration(60s)")
 	}
-	results, err := a.CreateTopics(
+	_, err = a.CreateTopics(
 		ctx,
 		// Multiple topics can be created simultaneously
 		// by providing more TopicSpecification structs here.
@@ -126,17 +162,15 @@ func createTopic(topic string, numParts, replicationFactor int) {
 	}
 
 	// Print results
-	for _, result := range results {
-		fmt.Printf("%s\n", result)
-	}
-
-	a.Close()
+	//for _, result := range results {
+	//	fmt.Printf("%s\n", result)
+	//}
 }
 
 func main() {
-	producerWorkers := 10
+	producerWorkers := 3
 	//consumerWorkers := 10
-	messagesPerWorker := 10000
+	messagesPerWorker := 500000
 
 	/*results := make(chan string)
 	var wg sync.WaitGroup
@@ -146,22 +180,27 @@ func main() {
 		close(results)
 	}()*/
 
-	topic := "repTopic"
-	numPartitions := 9
-	replicationFactor := 3
+	topic := "repTopic3"
+	numPartitions := 1
+	replicationFactor := 1
 	createTopic(topic, numPartitions, replicationFactor)
 
 	for i := 0; i < producerWorkers; i++ {
-		go func() {
+		go func(i int) {
 			//defer wg.Done()
 			//results <- produce(messagesPerWorker)
-			produce(topic, messagesPerWorker)
-		}()
+			fmt.Println("starting worker " + strconv.Itoa(i))
+			produce(topic, messagesPerWorker, i*messagesPerWorker)
+		}(i)
 	}
+
+	//d := make(chan string)
+	//<-d
 
 	/*for r := range results {
 		fmt.Printf("Delivered message \n", r)
 	}*/
 
 	consume(topic)
+
 }

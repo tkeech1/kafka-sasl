@@ -35,8 +35,8 @@ address=":8000"
 tls="tlsonly"
 
 [tls.tlsonly]
-certfile="/etc/burrow/client-cer.pem"
-keyfile="/etc/burrow/client-key.pem"
-cafile="/etc/burrow/server-cer.pem"
+certfile="/etc/burrow/client.cer.pem"
+keyfile="/etc/burrow/client.key.pem"
+cafile="/etc/burrow/server.cer.pem"
 noverify=true
 

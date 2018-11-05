@@ -30,6 +30,7 @@ destroy-network:
 run-zk: prune destroy-network create-network
 	docker run -d \
 	-v $(PWD)/zoo.cfg:/opt/$(ZOOKEEPER_VERSION)/conf/zoo.cfg \
+	-v $(PWD)/log4j.properties_zk:/opt/$(ZOOKEEPER_VERSION)/conf/log4j.properties \
 	-v $(PWD)/jaas.conf:/opt/$(ZOOKEEPER_VERSION)/conf/jaas.conf \
 	-v $(PWD)/java.env:/opt/$(ZOOKEEPER_VERSION)/conf/java.env \
 	-v $(PWD)/zookeeper_prom.yml:/opt/$(ZOOKEEPER_VERSION)/conf/zookeeper_prom.yml \
@@ -40,6 +41,7 @@ run-zk: prune destroy-network create-network
 	$(ZOOKEEPER_IMAGE) /bin/bash -c "/opt/$(ZOOKEEPER_VERSION)/bin/zkServer.sh start-foreground"
 	docker run -d \
 	-v $(PWD)/zoo.cfg:/opt/$(ZOOKEEPER_VERSION)/conf/zoo.cfg \
+	-v $(PWD)/log4j.properties_zk:/opt/$(ZOOKEEPER_VERSION)/conf/log4j.properties \
 	-v $(PWD)/jaas.conf:/opt/$(ZOOKEEPER_VERSION)/conf/jaas.conf \
 	-v $(PWD)/java.env:/opt/$(ZOOKEEPER_VERSION)/conf/java.env \
 	-v $(PWD)/zookeeper_prom.yml:/opt/$(ZOOKEEPER_VERSION)/conf/zookeeper_prom.yml \
@@ -50,6 +52,7 @@ run-zk: prune destroy-network create-network
 	$(ZOOKEEPER_IMAGE) /bin/bash -c "/opt/$(ZOOKEEPER_VERSION)/bin/zkServer.sh start-foreground"
 	docker run -d \
 	-v $(PWD)/zoo.cfg:/opt/$(ZOOKEEPER_VERSION)/conf/zoo.cfg \
+	-v $(PWD)/log4j.properties_zk:/opt/$(ZOOKEEPER_VERSION)/conf/log4j.properties \
 	-v $(PWD)/jaas.conf:/opt/$(ZOOKEEPER_VERSION)/conf/jaas.conf \
 	-v $(PWD)/java.env:/opt/$(ZOOKEEPER_VERSION)/conf/java.env \
 	-v $(PWD)/zookeeper_prom.yml:/opt/$(ZOOKEEPER_VERSION)/conf/zookeeper_prom.yml \
@@ -128,9 +131,9 @@ stop-kafkamanager:
 run-burrow: prune
 	docker run -d \
 	-v $(PWD)/burrow.toml:/etc/burrow/burrow.toml \
-	-v $(PWD)/client.cer.pem:/etc/burrow/client-cer.pem \
-	-v $(PWD)/client.key.pem:/etc/burrow/client-key.pem \
-	-v $(PWD)/server.cer.pem:/etc/burrow/server-cer.pem \
+	-v $(PWD)/client.cer.pem:/etc/burrow/client.cer.pem \
+	-v $(PWD)/client.key.pem:/etc/burrow/client.key.pem \
+	-v $(PWD)/server.cer.pem:/etc/burrow/server.cer.pem \
 	--network knet -p 8000:8000 --name burrow burrow:latest
 	
 stop-burrow: 
