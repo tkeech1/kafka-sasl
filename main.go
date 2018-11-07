@@ -5,12 +5,13 @@ import (
 	"fmt"
 	"os"
 	"strconv"
+	"sync"
 	"time"
 
 	"github.com/confluentinc/confluent-kafka-go/kafka"
 )
 
-func produce(topic string, messages, startid int) {
+func produce(topic string, messages int) {
 
 	p, err := kafka.NewProducer(&kafka.ConfigMap{
 		"bootstrap.servers":        "kafka0:9093,kafka1:9093,kafka2:9093",
@@ -41,80 +42,82 @@ func produce(topic string, messages, startid int) {
 				fmt.Printf("ERROR: %v\n", ev)
 			}
 		}
-		fmt.Printf("delivered %d \n", counter)
+		//fmt.Printf("producer delivered %d \n", counter)
 	}()
 
 	// Produce messages to topic (asynchronously)
 	for i := 0; i < messages; i++ {
-		//for _, word := range []string{"Welcome", "to", "the", "Confluent", "Kafka", "Golang", "client", "Welcome", "to", "the", "Confluent", "Kafka", "Golang", "client"} {
-		messageNumber := strconv.Itoa(startid + i)
 		p.Produce(&kafka.Message{
 			TopicPartition: kafka.TopicPartition{Topic: &topic, Partition: kafka.PartitionAny},
-			Value:          []byte("testMessage " + messageNumber),
+			Value:          []byte("testMessage " + strconv.Itoa(i)),
 		}, nil)
-		//fmt.Println("Producing message " + messageNumber)
+		// fmt.Println("Producing message " + messageNumber)
 		// the default value of queue.buffering.max.ms is 100,000 messages so we need to flush when sending more than 100K messages
 		if i%99999 == 0 {
 			p.Flush(15 * 1000)
 		}
 	}
 
-	fmt.Println("Stopping worker... ")
+	//fmt.Println("Stopping producer worker... ")
 	// Wait for message deliveries before shutting down
 	p.Flush(15 * 1000)
 }
 
-func consume(topic string) {
-	c, err := kafka.NewConsumer(&kafka.ConfigMap{
-		"bootstrap.servers":        "kafka0:9093,kafka1:9093,kafka2:9093",
-		"security.protocol":        "ssl",
-		"ssl.ca.location":          "server.cer.pem",
-		"ssl.certificate.location": "client.cer.pem",
-		"ssl.key.location":         "client.key.pem",
-		"group.id":                 "myGroup",
-		"auto.offset.reset":        "earliest",
-	})
+func consume(done <-chan struct{}, topic string) <-chan int {
+	count := make(chan int)
+	go func() {
+		defer close(count)
 
-	if err != nil {
-		panic(err)
-	}
+		c, err := kafka.NewConsumer(&kafka.ConfigMap{
+			"bootstrap.servers":        "kafka0:9093,kafka1:9093,kafka2:9093",
+			"security.protocol":        "ssl",
+			"ssl.ca.location":          "server.cer.pem",
+			"ssl.certificate.location": "client.cer.pem",
+			"ssl.key.location":         "client.key.pem",
+			"group.id":                 "myGroup",
+			"auto.offset.reset":        "earliest",
+		})
 
-	defer c.Close()
+		//fmt.Println("starting consumer worker... ")
 
-	c.SubscribeTopics([]string{topic, "^aRegex.*[Tt]opic"}, nil)
+		if err != nil {
+			panic(err)
+		}
 
-	counter := 0
+		defer c.Close()
 
-	run := true
+		c.SubscribeTopics([]string{topic, "^aRegex.*[Tt]opic"}, nil)
 
-	for run == true {
-		select {
-		default:
-			ev := c.Poll(100)
-			if ev == nil {
-				continue
-			}
-
-			switch e := ev.(type) {
-			case *kafka.Message:
-				//fmt.Printf("%% Message on %s: %s\n", e.TopicPartition, string(e.Value))
-				//if e.Headers != nil {
-				//	fmt.Printf("%% Headers: %v\n", e.Headers)
-				//}
-				counter = counter + 1
-			case kafka.PartitionEOF:
-				fmt.Printf("Reached %v\n", e)
-				fmt.Printf("  consumed %d \n", counter)
-			case kafka.Error:
-				fmt.Fprintf(os.Stderr, "%% Error: %v\n", e)
-				run = false
+		for {
+			select {
+			case <-done:
+				//fmt.Printf("Closing consumer\n")
+				break
 			default:
-				fmt.Printf("Ignored %v\n", e)
+				ev := c.Poll(100)
+				if ev == nil {
+					continue
+				}
+				switch e := ev.(type) {
+				case *kafka.Message:
+					//fmt.Printf("%% Message on %s: %s\n", e.TopicPartition, string(e.Value))
+					//if e.Headers != nil {
+					//	fmt.Printf("%% Headers: %v\n", e.Headers)
+					//}
+					//fmt.Println("consumer got message ... ")
+					count <- 1
+				case kafka.PartitionEOF:
+					fmt.Printf("Reached %v\n", e)
+				case kafka.Error:
+					fmt.Fprintf(os.Stderr, "%% Error: %v\n", e)
+				default:
+					fmt.Printf("Ignored %v\n", e)
+				}
 			}
 		}
-	}
+	}()
 
-	fmt.Printf("Closing consumer\n")
+	return count
 }
 
 func createTopic(topic string, numParts, replicationFactor int) {
@@ -161,46 +164,78 @@ func createTopic(topic string, numParts, replicationFactor int) {
 		os.Exit(1)
 	}
 
-	// Print results
-	//for _, result := range results {
-	//	fmt.Printf("%s\n", result)
-	//}
 }
 
 func main() {
-	producerWorkers := 3
-	//consumerWorkers := 10
-	messagesPerWorker := 500000
+	producerWorkers := 10
+	consumerWorkers := 10
+	messagesPerWorker := 10000
+	topic := "repTopic2"
+	numPartitions := 9
+	replicationFactor := 3
 
-	/*results := make(chan string)
-	var wg sync.WaitGroup
-	wg.Add(producerWorkers)
-	go func() {
-		wg.Wait()
-		close(results)
-	}()*/
+	done := make(chan struct{})
+	defer close(done)
 
-	topic := "repTopic3"
-	numPartitions := 1
-	replicationFactor := 1
 	createTopic(topic, numPartitions, replicationFactor)
 
+	fmt.Printf("starting %d producer(s) \n", producerWorkers)
+	fmt.Printf("sending %d total message(s) \n", messagesPerWorker*producerWorkers)
+
 	for i := 0; i < producerWorkers; i++ {
-		go func(i int) {
-			//defer wg.Done()
-			//results <- produce(messagesPerWorker)
-			fmt.Println("starting worker " + strconv.Itoa(i))
-			produce(topic, messagesPerWorker, i*messagesPerWorker)
-		}(i)
+		//fmt.Println("starting producer worker " + strconv.Itoa(i))
+		go func() {
+			produce(topic, messagesPerWorker)
+		}()
 	}
 
-	//d := make(chan string)
-	//<-d
+	fmt.Printf("starting %d consumer(s) \n", consumerWorkers)
+	consumer := make([]<-chan int, consumerWorkers)
+	for i := range consumer {
+		consumer[i] = make(<-chan int)
+		consumer[i] = consume(done, topic)
+	}
 
-	/*for r := range results {
-		fmt.Printf("Delivered message \n", r)
-	}*/
+	out := merge(done, consumer...)
+	messageCount := 0
+	for range out {
+		messageCount = messageCount + 1
+		if messageCount == messagesPerWorker*producerWorkers {
+			break
+		}
+	}
 
-	consume(topic)
+	fmt.Printf("received %d messages\n", messageCount)
+}
 
+// merge multiple channels into a single channel
+func merge(done <-chan struct{}, cs ...<-chan int) <-chan int {
+	var wg sync.WaitGroup
+	out := make(chan int)
+
+	// Start an output goroutine for each input channel in cs.  output
+	// copies values from c to out until c is closed or it receives a value
+	// from done, then output calls wg.Done.
+	output := func(c <-chan int) {
+		defer wg.Done()
+		for n := range c {
+			select {
+			case out <- n:
+			case <-done:
+				return
+			}
+		}
+	}
+	wg.Add(len(cs))
+	for _, c := range cs {
+		go output(c)
+	}
+
+	// Start a goroutine to close out once all the output goroutines are
+	// done.  This must start after the wg.Add call.
+	go func() {
+		wg.Wait()
+		close(out)
+	}()
+	return out
 }
