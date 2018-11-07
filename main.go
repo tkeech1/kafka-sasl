@@ -12,55 +12,56 @@ import (
 )
 
 func produce(topic string, messages int) {
-
-	p, err := kafka.NewProducer(&kafka.ConfigMap{
-		"bootstrap.servers":        "kafka0:9093,kafka1:9093,kafka2:9093",
-		"security.protocol":        "ssl",
-		"ssl.ca.location":          "server.cer.pem",
-		"ssl.certificate.location": "client.cer.pem",
-		"ssl.key.location":         "client.key.pem",
-	})
-	if err != nil {
-		panic(err)
-	}
-
-	defer p.Close()
-
-	// Delivery report handler for produced messages
 	go func() {
-		counter := 0
-		for e := range p.Events() {
-			switch ev := e.(type) {
-			case *kafka.Message:
-				if ev.TopicPartition.Error != nil {
-					fmt.Printf("Delivery failed: %v\n", ev.TopicPartition)
-				} else {
-					//fmt.Printf("Delivered message to %v\n", ev.TopicPartition)
-					counter = counter + 1
+		p, err := kafka.NewProducer(&kafka.ConfigMap{
+			"bootstrap.servers":        "kafka0:9093,kafka1:9093,kafka2:9093",
+			"security.protocol":        "ssl",
+			"ssl.ca.location":          "server.cer.pem",
+			"ssl.certificate.location": "client.cer.pem",
+			"ssl.key.location":         "client.key.pem",
+		})
+		if err != nil {
+			panic(err)
+		}
+
+		defer p.Close()
+
+		// Delivery report handler for produced messages
+		go func() {
+			counter := 0
+			for e := range p.Events() {
+				switch ev := e.(type) {
+				case *kafka.Message:
+					if ev.TopicPartition.Error != nil {
+						fmt.Printf("Delivery failed: %v\n", ev.TopicPartition)
+					} else {
+						//fmt.Printf("Delivered message to %v\n", ev.TopicPartition)
+						counter = counter + 1
+					}
+				default:
+					fmt.Printf("ERROR: %v\n", ev)
 				}
-			default:
-				fmt.Printf("ERROR: %v\n", ev)
+			}
+			//fmt.Printf("producer delivered %d \n", counter)
+		}()
+
+		// Produce messages to topic (asynchronously)
+		for i := 0; i < messages; i++ {
+			p.Produce(&kafka.Message{
+				TopicPartition: kafka.TopicPartition{Topic: &topic, Partition: kafka.PartitionAny},
+				Value:          []byte("testMessage " + strconv.Itoa(i)),
+			}, nil)
+			// fmt.Println("Producing message " + messageNumber)
+			// the default value of queue.buffering.max.ms is 100,000 messages so we need to flush when sending more than 100K messages
+			if i%99999 == 0 {
+				p.Flush(15 * 1000)
 			}
 		}
-		//fmt.Printf("producer delivered %d \n", counter)
+
+		//fmt.Println("Stopping producer worker... ")
+		// Wait for message deliveries before shutting down
+		p.Flush(15 * 1000)
 	}()
-
-	// Produce messages to topic (asynchronously)
-	for i := 0; i < messages; i++ {
-		p.Produce(&kafka.Message{
-			TopicPartition: kafka.TopicPartition{Topic: &topic, Partition: kafka.PartitionAny},
-			Value:          []byte("testMessage " + strconv.Itoa(i)),
-		}, nil)
-		// fmt.Println("Producing message " + messageNumber)
-		// the default value of queue.buffering.max.ms is 100,000 messages so we need to flush when sending more than 100K messages
-		if i%99999 == 0 {
-			p.Flush(15 * 1000)
-		}
-	}
-
-	//fmt.Println("Stopping producer worker... ")
-	// Wait for message deliveries before shutting down
-	p.Flush(15 * 1000)
 }
 
 func consume(done <-chan struct{}, topic string) <-chan int {
@@ -167,8 +168,8 @@ func createTopic(topic string, numParts, replicationFactor int) {
 }
 
 func main() {
-	producerWorkers := 10
-	consumerWorkers := 10
+	producerWorkers := 50
+	consumerWorkers := 50
 	messagesPerWorker := 10000
 	topic := "repTopic2"
 	numPartitions := 9
@@ -184,9 +185,7 @@ func main() {
 
 	for i := 0; i < producerWorkers; i++ {
 		//fmt.Println("starting producer worker " + strconv.Itoa(i))
-		go func() {
-			produce(topic, messagesPerWorker)
-		}()
+		produce(topic, messagesPerWorker)
 	}
 
 	fmt.Printf("starting %d consumer(s) \n", consumerWorkers)
