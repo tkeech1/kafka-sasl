@@ -176,3 +176,11 @@ go-client: go-client-image
 	-v $(PWD)/client-key.pem:/go/client-key.pem \
 	-v $(PWD)/server-cer.pem:/go/server-cer.pem \
 	kafkaload
+
+go-client-benchmark: go-client-image
+	docker run -it --rm --network knet \
+	-v $(PWD)/client-cer.pem:/go/client-cer.pem \
+	-v $(PWD)/client-key.pem:/go/client-key.pem \
+	-v $(PWD)/server-cer.pem:/go/server-cer.pem \
+	--entrypoint "go" \
+	kafkaload test -bench=.
