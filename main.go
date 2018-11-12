@@ -20,8 +20,6 @@ type KafkaProducer interface {
 	ProduceChannel() chan *kafka.Message
 }
 
-type Done struct{}
-
 // KafkaConsumer is a kafka consumer
 type KafkaConsumer interface {
 	Close() error
@@ -35,29 +33,6 @@ func timeTrack(start time.Time, name string) {
 	log.Printf("%s took %s", name, elapsed)
 }
 
-/*func getDeliveryReport(p KafkaProducer) <-chan int {
-	delivered := make(chan int)
-	// Delivery report handler for produced messages
-	go func() {
-		defer close(delivered)
-		defer timeTrack(time.Now(), "getDeliveryReport")
-
-		for e := range p.Events() {
-			switch ev := e.(type) {
-			case *kafka.Message:
-				if ev.TopicPartition.Error != nil {
-					log.Printf("Delivery failed: %v\n", ev.TopicPartition)
-				} else {
-					delivered <- 1
-				}
-			default:
-				log.Printf("ERROR: %v\n", ev)
-			}
-		}
-	}()
-	return delivered
-}*/
-
 func produce(message chan string, topic string) <-chan int {
 	sent := make(chan int)
 	go func() {
@@ -68,7 +43,6 @@ func produce(message chan string, topic string) <-chan int {
 		defer p.Close()
 
 		i := 0
-		// Produce messages to topic (asynchronously)
 		for m := range message {
 			p.ProduceChannel() <- &kafka.Message{
 				TopicPartition: kafka.TopicPartition{Topic: &topic, Partition: kafka.PartitionAny},
@@ -76,7 +50,7 @@ func produce(message chan string, topic string) <-chan int {
 			}
 			i = i + 1
 			sent <- 1
-			// the default value of queue.buffering.max.ms is 100,000 messages so we need to flush when sending more than 100K messages
+			// the default value of Kafka queue.buffering.max.ms is 100,000 messages so we need to flush when sending more than 100K messages
 			if i%99999 == 0 {
 				p.Flush(5 * 1000)
 			}
@@ -101,7 +75,7 @@ func createProducerWorker() KafkaProducer {
 	return p
 }
 
-func consume(done <-chan struct{}, topic string) <-chan int {
+func consume(done <-chan bool, topic string) <-chan int {
 	count := make(chan int)
 	go func() {
 		defer close(count)
@@ -121,16 +95,9 @@ func consume(done <-chan struct{}, topic string) <-chan int {
 				if ev == nil {
 					continue
 				}
-				switch e := ev.(type) {
+				switch ev.(type) {
 				case *kafka.Message:
-					//log.Printf("%% Message on %s:\n%s\n", e.TopicPartition, string(e.Value))
 					count <- 1
-				case kafka.PartitionEOF:
-					log.Printf("Reached %v\n", e)
-				case kafka.Error:
-					log.Printf("Error: %v\n", e)
-				default:
-					log.Printf("Ignored %v\n", e)
 				}
 			}
 		}
@@ -156,11 +123,6 @@ func createConsumerWorker() KafkaConsumer {
 }
 
 func createTopic(topic string, numParts, replicationFactor int) {
-	// Create a new AdminClient.
-	// AdminClient can also be instantiated using an existing
-	// Producer or Consumer instance, see NewAdminClientFromProducer and
-	// NewAdminClientFromConsumer.
-
 	// Contexts are used to abort or limit the amount of time
 	// the Admin call blocks waiting for a result.
 	a, err := kafka.NewAdminClient(&kafka.ConfigMap{
@@ -202,20 +164,21 @@ func createTopic(topic string, numParts, replicationFactor int) {
 }
 
 func main() {
-	producerWorkers := 8
-	consumerWorkers := 10
-	totalMessages := 500000
-	topic := "repTopic1"
-	numPartitions := 9
-	replicationFactor := 3
+	producerWorkers := 12
+	consumerWorkers := 12
+	totalMessages := 5000000
+	numPartitions := 1
+	replicationFactor := 1
+	topic := "producers-" + strconv.Itoa(producerWorkers) + "_partitions-" + strconv.Itoa(numPartitions) + "_repFactor-" + strconv.Itoa(replicationFactor)
 
-	done := make(chan struct{})
+	done := make(chan bool)
 	defer close(done)
 
 	createTopic(topic, numPartitions, replicationFactor)
 
-	log.Printf("creating %d producer(s) \n", producerWorkers)
-	log.Printf("sending %d total message(s) \n", totalMessages)
+	log.Printf("Topic: %s\n", topic)
+	log.Printf("Producers: %d\n", producerWorkers)
+	log.Printf("Total Messages %d \n", totalMessages)
 	producerResult := make([]<-chan int, producerWorkers)
 	messages := make(chan string, producerWorkers)
 	for i := range producerResult {
@@ -230,15 +193,13 @@ func main() {
 		close(messages)
 	}()
 
-	log.Printf("processing sent messages")
 	in := merge(done, producerResult...)
 	producerMessageCount := 0
 	for range in {
 		producerMessageCount = producerMessageCount + 1
 	}
-	log.Printf("sent %d messages\n", producerMessageCount)
 
-	log.Printf("starting %d consumer(s) \n", consumerWorkers)
+	log.Printf("Consumers: %d\n", consumerWorkers)
 	consumerResult := make([]<-chan int, consumerWorkers)
 	for i := range consumerResult {
 		consumerResult[i] = make(<-chan int)
@@ -253,26 +214,19 @@ func main() {
 		case <-out:
 			consumerMessageCount = consumerMessageCount + 1
 			if producerMessageCount == consumerMessageCount {
-				done <- Done{}
+				done <- true
 				run = false
 			}
 		// timeout all go routines to avoid hanging
 		case <-time.After(10 * time.Second):
 			log.Printf("Timed out waiting for results")
-			done <- Done{}
+			done <- true
 			run = false
 		}
 	}
-	/*for range out {
-		consumerMessageCount = consumerMessageCount + 1
-		if producerMessageCount == consumerMessageCount {
-			done <- Done{}
-			break
-		}
-	}*/
 
 	if consumerMessageCount == producerMessageCount {
-		log.Printf("received %d messages\n", consumerMessageCount)
+		log.Printf("Received: %d \n", consumerMessageCount)
 	} else {
 		log.Printf("ERROR: produced %d and consumed %d \n", producerMessageCount, consumerMessageCount)
 	}
@@ -280,7 +234,7 @@ func main() {
 }
 
 // merge multiple channels into a single channel
-func merge(done <-chan struct{}, cs ...<-chan int) <-chan int {
+func merge(done <-chan bool, cs ...<-chan int) <-chan int {
 	var wg sync.WaitGroup
 	out := make(chan int)
 
