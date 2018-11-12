@@ -39,7 +39,7 @@ func produce(message chan string, topic string) <-chan int {
 		defer close(sent)
 		defer timeTrack(time.Now(), "produce")
 
-		p := createProducerWorker()
+		p := createProducer()
 		defer p.Close()
 
 		i := 0
@@ -61,7 +61,7 @@ func produce(message chan string, topic string) <-chan int {
 	return sent
 }
 
-func createProducerWorker() KafkaProducer {
+func createProducer() KafkaProducer {
 	p, err := kafka.NewProducer(&kafka.ConfigMap{
 		"bootstrap.servers":        "kafka0:9093,kafka1:9093,kafka2:9093",
 		"security.protocol":        "ssl",
@@ -81,7 +81,7 @@ func consume(done <-chan bool, topic string) <-chan int {
 		defer close(count)
 		defer timeTrack(time.Now(), "consume")
 
-		c := createConsumerWorker()
+		c := createConsumer()
 		defer c.Close()
 
 		c.SubscribeTopics([]string{topic, "^aRegex.*[Tt]opic"}, nil)
@@ -106,7 +106,7 @@ func consume(done <-chan bool, topic string) <-chan int {
 	return count
 }
 
-func createConsumerWorker() KafkaConsumer {
+func createConsumer() KafkaConsumer {
 	c, err := kafka.NewConsumer(&kafka.ConfigMap{
 		"bootstrap.servers":        "kafka0:9093,kafka1:9093,kafka2:9093",
 		"security.protocol":        "ssl",
@@ -166,7 +166,7 @@ func createTopic(topic string, numParts, replicationFactor int) {
 func main() {
 	producerWorkers := 12
 	consumerWorkers := 12
-	totalMessages := 5000000
+	totalMessages := 10000
 	numPartitions := 1
 	replicationFactor := 1
 	topic := "producers-" + strconv.Itoa(producerWorkers) + "_partitions-" + strconv.Itoa(numPartitions) + "_repFactor-" + strconv.Itoa(replicationFactor)

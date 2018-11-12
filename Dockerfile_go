@@ -5,7 +5,4 @@ RUN apt-get update && apt-get install librdkafka-dev=0.11.6-1~bpo9+1 librdkafka+
 RUN go get -u github.com/confluentinc/confluent-kafka-go/kafka
 
 COPY . ./
-ENTRYPOINT ["go"]
-CMD ["run","main.go"]
-
-
+#RUN go get -v -t -d ./...
