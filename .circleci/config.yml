@@ -3,7 +3,7 @@ version: 2
 jobs:
   build-go1.10:
     docker:
-      - image: circleci/golang:1.10
+      - image: tkeech1/kafkaload:latest
     working_directory: /go/src/github.com/tkeech1/kafka-sasl
     steps:
       - checkout
@@ -11,7 +11,7 @@ jobs:
       - run: go test -race 
   build-go1.11:
     docker:
-      - image: circleci/golang:1.11
+      - image: tkeech1/kafkaload:latest
     working_directory: /go/src/github.com/tkeech1/kafka-sasl
     steps:
       - checkout
@@ -19,7 +19,7 @@ jobs:
       - run: go test -race
   build-go1.11-gomodules:
     docker:
-      - image: circleci/golang:1.11
+      - image: tkeech1/kafkaload:latest
     working_directory: ~/github.com/tkeech1/kafka-sasl
     steps:
       - checkout
