@@ -1,3 +1,5 @@
+[![CircleCI](https://circleci.com/gh/tkeech1/kafka-sasl.svg?style=svg)](https://circleci.com/gh/tkeech1/kafka-sasl)
+
 ### URLs & Ports
 
 * **Zookeeper** - localhost:2181
