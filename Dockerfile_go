@@ -4,5 +4,5 @@ RUN echo "deb http://ftp.debian.org/debian stretch-backports main" >> /etc/apt/s
 RUN apt-get update && apt-get install librdkafka-dev=0.11.6-1~bpo9+1 librdkafka++1=0.11.6-1~bpo9+1 librdkafka1=0.11.6-1~bpo9+1
 RUN go get -u github.com/confluentinc/confluent-kafka-go/kafka
 
-COPY . ./
-#RUN go get -v -t -d ./...
+RUN mkdir /root/kafka-sasl/
+WORKDIR /root/kafka-sasl

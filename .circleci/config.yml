@@ -1,0 +1,34 @@
+# Golang CircleCI 2.0 configuration file
+version: 2
+jobs:
+  build-go1.10:
+    docker:
+      - image: circleci/golang:1.10
+    working_directory: /go/src/github.com/tkeech1/kafka-sasl
+    steps:
+      - checkout
+      - run: go get -v -t -d ./...
+      - run: go test -race 
+  build-go1.11:
+    docker:
+      - image: circleci/golang:1.11
+    working_directory: /go/src/github.com/tkeech1/kafka-sasl
+    steps:
+      - checkout
+      - run: go get -v -t -d ./...
+      - run: go test -race
+  build-go1.11-gomodules:
+    docker:
+      - image: circleci/golang:1.11
+    working_directory: ~/github.com/tkeech1/kafka-sasl
+    steps:
+      - checkout
+      - run: go test -race
+
+workflows:
+  version: 2
+  build_and_test:
+    jobs:
+      - build-go1.10
+      - build-go1.11
+      - build-go1.11-gomodules
