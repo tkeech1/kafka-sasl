@@ -9,6 +9,8 @@ import (
 	"time"
 
 	"github.com/confluentinc/confluent-kafka-go/kafka"
+	goavro "github.com/linkedin/goavro"
+	//goavro "gopkg.in/linkedin/goavro.v2"
 )
 
 // KafkaProducer is a kafka producer
@@ -33,7 +35,7 @@ func timeTrack(start time.Time, name string) {
 	log.Printf("%s took %s", name, elapsed)
 }
 
-func produce(message chan string, topic string) <-chan int {
+func produce(message chan []byte, topic string) <-chan int {
 	sent := make(chan int)
 	go func() {
 		defer close(sent)
@@ -46,17 +48,17 @@ func produce(message chan string, topic string) <-chan int {
 		for m := range message {
 			p.ProduceChannel() <- &kafka.Message{
 				TopicPartition: kafka.TopicPartition{Topic: &topic, Partition: kafka.PartitionAny},
-				Value:          []byte(m + strconv.Itoa(i)),
+				Value:          m,
 			}
 			i = i + 1
 			sent <- 1
 			// the default value of Kafka queue.buffering.max.ms is 100,000 messages so we need to flush when sending more than 100K messages
 			if i%99999 == 0 {
-				p.Flush(5 * 1000)
+				p.Flush(5000)
 			}
 		}
 
-		p.Flush(5 * 1000)
+		p.Flush(5000)
 	}()
 	return sent
 }
@@ -78,11 +80,11 @@ func createProducer() KafkaProducer {
 func consume(done <-chan bool, topic string) <-chan int {
 	count := make(chan int)
 	go func() {
-		defer close(count)
-		defer timeTrack(time.Now(), "consume")
 
 		c := createConsumer()
 		defer c.Close()
+		defer timeTrack(time.Now(), "consume")
+		defer close(count)
 
 		c.SubscribeTopics([]string{topic, "^aRegex.*[Tt]opic"}, nil)
 
@@ -95,9 +97,12 @@ func consume(done <-chan bool, topic string) <-chan int {
 				if ev == nil {
 					continue
 				}
+				//switch e := ev.(type) {
 				switch ev.(type) {
 				case *kafka.Message:
 					count <- 1
+					//text, _ := decodeBinary(e.Value)
+					//log.Printf(" Got message: %s\n", string(text))
 				}
 			}
 		}
@@ -165,9 +170,9 @@ func createTopic(topic string, numParts, replicationFactor int) {
 
 func main() {
 	producerWorkers := 12
-	consumerWorkers := 12
+	consumerWorkers := 1
 	totalMessages := 10000
-	numPartitions := 1
+	numPartitions := 3
 	replicationFactor := 1
 	topic := "producers-" + strconv.Itoa(producerWorkers) + "_partitions-" + strconv.Itoa(numPartitions) + "_repFactor-" + strconv.Itoa(replicationFactor)
 
@@ -180,17 +185,23 @@ func main() {
 	log.Printf("Producers: %d\n", producerWorkers)
 	log.Printf("Total Messages %d \n", totalMessages)
 	producerResult := make([]<-chan int, producerWorkers)
-	messages := make(chan string, producerWorkers)
+	messages := make(chan []byte, producerWorkers)
 	for i := range producerResult {
 		producerResult[i] = make(<-chan int)
 		producerResult[i] = produce(messages, topic)
 	}
 
 	go func() {
-		for i := 0; i < totalMessages; i++ {
-			messages <- "test message"
+		defer close(messages)
+		binary, err := encodeBinary()
+		if err != nil {
+			log.Printf("error creating binary")
+			return
 		}
-		close(messages)
+		for i := 0; i < totalMessages; i++ {
+			//messages <- "test message"
+			messages <- binary
+		}
 	}()
 
 	in := merge(done, producerResult...)
@@ -231,6 +242,9 @@ func main() {
 		log.Printf("ERROR: produced %d and consumed %d \n", producerMessageCount, consumerMessageCount)
 	}
 
+	wait := make(chan bool)
+	<-wait
+
 }
 
 // merge multiple channels into a single channel
@@ -263,4 +277,73 @@ func merge(done <-chan bool, cs ...<-chan int) <-chan int {
 		close(out)
 	}()
 	return out
+}
+
+func getCodec() (*goavro.Codec, error) {
+	codec, err := goavro.NewCodec(`
+	{
+		"type": "record",
+		"name": "LongList",
+		"fields" : [
+	{"name": "next", "type": ["null", "LongList", {"type": "long", "logicalType": "timestamp-millis"}], "default": null}
+		]
+	  }`)
+	if err != nil {
+		log.Printf(" error creating codec ")
+		return nil, err
+	}
+	return codec, nil
+}
+
+func encodeBinary() ([]byte, error) {
+
+	codec, err := getCodec()
+	if err != nil {
+		log.Printf(" error creating codec ")
+		return nil, err
+	}
+
+	// NOTE: May omit fields when using default value
+	textual := []byte(`{"next":{"LongList":{}}}`)
+
+	// Convert textual Avro data (in Avro JSON format) to native Go form
+	native, _, err := codec.NativeFromTextual(textual)
+	if err != nil {
+		log.Printf(" error encoding to native ")
+		return nil, err
+	}
+
+	// Convert native Go form to binary Avro data
+	binary, err := codec.BinaryFromNative(nil, native)
+	if err != nil {
+		log.Printf(" error encoding to binary ")
+		return nil, err
+	}
+
+	return binary, err
+}
+
+func decodeBinary(binary []byte) ([]byte, error) {
+
+	codec, err := getCodec()
+	if err != nil {
+		log.Printf(" error creating codec ")
+		return nil, err
+	}
+
+	// Convert binary Avro data back to native Go form
+	native, _, err := codec.NativeFromBinary(binary)
+	if err != nil {
+		log.Printf(" error decoding to native ")
+		return nil, err
+	}
+
+	// Convert native Go form to textual Avro data
+	textual, err := codec.TextualFromNative(nil, native)
+	if err != nil {
+		log.Printf(" error decoding from native to text ")
+		return nil, err
+	}
+
+	return textual, err
 }

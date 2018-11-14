@@ -155,7 +155,8 @@ run-zoo-navigator-api: stop-zoo-navigator prune
 	-e API_HTTP_PORT=9001 \
 	--network knet -p 9001:9001 --name zoonavigatorapi elkozmon/zoonavigator-api:0.5.0
 
-run-all: run-zk run-kafka run-kafkamanager run-burrow run-zoo-navigator-web
+run-all: run-zk run-kafka 
+	#run-kafkamanager run-burrow run-zoo-navigator-web
 
 stop-all: stop-kafka stop-zk stop-kafkaclient stop-kafkamanager stop-burrow stop-zoo-navigator prune destroy-network clean
 
@@ -170,10 +171,15 @@ clean:
 go-client-image:
 	docker build -f Dockerfile_go -t kafkaload .
 
-go-client: go-client-image
+go-client-run: go-client-image
 	docker run -it --rm --network knet \
 	-v $(PWD):/root/kafka-sasl/ \
 	kafkaload go run main.go
+
+go-client-tidy: go-client-image
+	docker run -it --rm --network knet \
+	-v $(PWD):/root/kafka-sasl/ \
+	kafkaload go mod tidy
 
 go-client-test: go-client-image
 	docker run -it --rm --network knet \
