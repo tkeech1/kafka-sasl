@@ -5,7 +5,7 @@ KAFKA_VERSION=kafka_2.12-1.1.1
 KAFKA_IMAGE=kafka:latest
 
 build-kafka-zk:
-	docker build -f Dockerfile_kafka_zk -t kafka .
+	docker build --no-cache -f Dockerfile_kafka_zk -t kafka .
 	# copy the cert files out of the kafka image so they can be mounted into the go client container
 	docker run -v $$PWD:/opt/mount --rm --entrypoint cp kafka /opt/client.cer.pem /opt/client.key.pem /opt/server.cer.pem /opt/mount/
 	sudo chmod 755 client.cer.pem client.key.pem server.cer.pem
@@ -114,7 +114,7 @@ run-kafkaclient: prune
 	# to test producer with SSL
 	#./bin/kafka-console-producer.sh --broker-list kafka0:9093 --topic test --producer.config config/client-ssl.properties
 	# to test consumer with SSL
-	#./bin/kafka-console-consumer.sh --bootstrap-server kafka1:9093 --topic test --consumer.config config/client-ssl.properties --from-beginning
+	#./bin/kafka-console-consumer.sh --bootstrap-server kafka1:9093 --topic producers-3_partitions-3_repFactor-3 --consumer.config config/client-ssl.properties --from-beginning
 
 stop-kafkaclient: 
 	docker stop client || true && docker rm client || true
@@ -174,7 +174,7 @@ go-client-image:
 go-client-run: go-client-image
 	docker run -it --rm --network knet \
 	-v $(PWD):/root/kafka-sasl/ \
-	kafkaload go run main.go
+	kafkaload go run main_simple.go
 
 go-client-tidy: go-client-image
 	docker run -it --rm --network knet \
