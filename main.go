@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"fmt"
 	"log"
 	"os"
 	"strconv"
@@ -35,32 +36,33 @@ func timeTrack(start time.Time, name string) {
 	log.Printf("%s took %s", name, elapsed)
 }
 
-func produce(message chan []byte, topic string) <-chan int {
-	sent := make(chan int)
+//func produce(message chan []byte, topic string, producerID int) <-chan int {
+func produce(message chan []byte, topic string, producerID int) {
+	//sent := make(chan int)
 	go func() {
-		defer close(sent)
-		defer timeTrack(time.Now(), "produce")
+		//defer close(sent)
+		defer timeTrack(time.Now(), "Producer "+strconv.Itoa(producerID))
 
 		p := createProducer()
 		defer p.Close()
 
-		i := 0
+		producedCount := 0
 		for m := range message {
 			p.ProduceChannel() <- &kafka.Message{
 				TopicPartition: kafka.TopicPartition{Topic: &topic, Partition: kafka.PartitionAny},
 				Value:          m,
 			}
-			i = i + 1
-			sent <- 1
-			// the default value of Kafka queue.buffering.max.ms is 100,000 messages so we need to flush when sending more than 100K messages
-			if i%99999 == 0 {
-				p.Flush(5000)
+			producedCount = producedCount + 1
+			//sent <- 1
+			if producedCount%100000 == 0 {
+				p.Flush(15 * 1000)
 			}
 		}
 
-		p.Flush(5000)
+		p.Flush(15 * 1000)
+		log.Printf("Producer %d sent %d\n", producerID, producedCount)
 	}()
-	return sent
+	//return sent
 }
 
 func createProducer() KafkaProducer {
@@ -70,6 +72,9 @@ func createProducer() KafkaProducer {
 		"ssl.ca.location":          "server.cer.pem",
 		"ssl.certificate.location": "client.cer.pem",
 		"ssl.key.location":         "client.key.pem",
+		"queue.buffering.max.ms":   1000,
+		"batch.num.messages":       100000,
+		//"debug":                    "msg",
 	})
 	if err != nil {
 		panic(err)
@@ -77,20 +82,21 @@ func createProducer() KafkaProducer {
 	return p
 }
 
-func consume(done <-chan bool, topic string) <-chan int {
+func consume(done <-chan bool, topic string, consumerID int) <-chan int {
 	count := make(chan int)
 	go func() {
+		defer close(count)
 
 		c := createConsumer()
 		defer c.Close()
-		defer timeTrack(time.Now(), "consume")
-		defer close(count)
 
 		c.SubscribeTopics([]string{topic, "^aRegex.*[Tt]opic"}, nil)
 
+		consumedCount := 0
 		for {
 			select {
 			case <-done:
+				log.Printf("Consumer %d recieved %d \n", consumerID, consumedCount)
 				return
 			default:
 				ev := c.Poll(100)
@@ -100,6 +106,10 @@ func consume(done <-chan bool, topic string) <-chan int {
 				//switch e := ev.(type) {
 				switch ev.(type) {
 				case *kafka.Message:
+					if consumedCount == 0 {
+						defer timeTrack(time.Now(), "Consumer "+strconv.Itoa(consumerID))
+					}
+					consumedCount = consumedCount + 1
 					count <- 1
 					//text, _ := decodeBinary(e.Value)
 					//log.Printf(" Got message: %s\n", string(text))
@@ -168,82 +178,104 @@ func createTopic(topic string, numParts, replicationFactor int) {
 	}
 }
 
-func main() {
-	producerWorkers := 12
-	consumerWorkers := 1
-	totalMessages := 10000
-	numPartitions := 3
-	replicationFactor := 1
-	topic := "producers-" + strconv.Itoa(producerWorkers) + "_partitions-" + strconv.Itoa(numPartitions) + "_repFactor-" + strconv.Itoa(replicationFactor)
+func simpleProducer(topic string) {
+	//deliveryChan := make(chan kafka.Event)
 
-	done := make(chan bool)
-	defer close(done)
-
-	createTopic(topic, numPartitions, replicationFactor)
-
-	log.Printf("Topic: %s\n", topic)
-	log.Printf("Producers: %d\n", producerWorkers)
-	log.Printf("Total Messages %d \n", totalMessages)
-	producerResult := make([]<-chan int, producerWorkers)
-	messages := make(chan []byte, producerWorkers)
-	for i := range producerResult {
-		producerResult[i] = make(<-chan int)
-		producerResult[i] = produce(messages, topic)
+	p, err := kafka.NewProducer(&kafka.ConfigMap{
+		"bootstrap.servers":        "kafka0:9093,kafka1:9093,kafka2:9093",
+		"security.protocol":        "ssl",
+		"ssl.ca.location":          "server.cer.pem",
+		"ssl.certificate.location": "client.cer.pem",
+		"ssl.key.location":         "client.key.pem",
+		//"queue.buffering.max.ms":   1000,
+		//"batch.num.messages":       100000,
+		//"debug":                    "msg",
+	})
+	if err != nil {
+		panic(err)
 	}
 
-	go func() {
-		defer close(messages)
-		binary, err := encodeBinary()
-		if err != nil {
-			log.Printf("error creating binary")
-			return
-		}
-		for i := 0; i < totalMessages; i++ {
-			//messages <- "test message"
-			messages <- binary
-		}
-	}()
+	value, _ := encodeBinary()
 
-	in := merge(done, producerResult...)
-	producerMessageCount := 0
-	for range in {
-		producerMessageCount = producerMessageCount + 1
+	log.Printf("producing")
+	for i := 0; i < 150000; i++ {
+		err = p.Produce(&kafka.Message{
+			TopicPartition: kafka.TopicPartition{Topic: &topic, Partition: kafka.PartitionAny},
+			Value:          value,
+			Headers:        []kafka.Header{{Key: "myTestHeader", Value: []byte("header values are binary")}},
+		}, nil)
+
+		/*e := <-deliveryChan
+		m := e.(*kafka.Message)
+
+		if m.TopicPartition.Error != nil {
+			fmt.Printf("Delivery failed: %v\n", m.TopicPartition.Error)
+		} else {
+			//fmt.Printf("Delivered message to topic %s [%d] at offset %v\n",
+			//	*m.TopicPartition.Topic, m.TopicPartition.Partition, m.TopicPartition.Offset)
+		}*/
 	}
 
-	log.Printf("Consumers: %d\n", consumerWorkers)
-	consumerResult := make([]<-chan int, consumerWorkers)
-	for i := range consumerResult {
-		consumerResult[i] = make(<-chan int)
-		consumerResult[i] = consume(done, topic)
+	log.Printf("done")
+
+	p.Flush(15 * 1000)
+
+	log.Printf("done flush")
+
+	//close(deliveryChan)
+}
+
+func simpleConsumer(topic string) {
+
+	defer timeTrack(time.Now(), "Consumer ")
+
+	messageCount := 0
+
+	c, _ := kafka.NewConsumer(&kafka.ConfigMap{
+		"bootstrap.servers":        "kafka0:9093,kafka1:9093,kafka2:9093",
+		"security.protocol":        "ssl",
+		"ssl.ca.location":          "server.cer.pem",
+		"ssl.certificate.location": "client.cer.pem",
+		"ssl.key.location":         "client.key.pem",
+		"group.id":                 "myGroup",
+		"session.timeout.ms":       6000,
+		"default.topic.config":     kafka.ConfigMap{"auto.offset.reset": "earliest"},
+	})
+	defer c.Close()
+
+	err := c.SubscribeTopics([]string{topic, "^aRegex.*[Tt]opic"}, nil)
+	if err != nil {
+		log.Printf("error subscribing to topic")
+		return
 	}
 
-	out := merge(done, consumerResult...)
-	consumerMessageCount := 0
 	run := true
-	for run {
+	for run == true {
 		select {
-		case <-out:
-			consumerMessageCount = consumerMessageCount + 1
-			if producerMessageCount == consumerMessageCount {
-				done <- true
-				run = false
+		default:
+			ev := c.Poll(100)
+			if ev == nil {
+				continue
 			}
-		// timeout all go routines to avoid hanging
-		case <-time.After(10 * time.Second):
-			log.Printf("Timed out waiting for results")
-			done <- true
-			run = false
+			switch e := ev.(type) {
+			case *kafka.Message:
+				//fmt.Printf("%% Message on %s:\n%s\n",
+				//	e.TopicPartition, string(e.Value))
+				//if e.Headers != nil {
+				//	fmt.Printf("%% Headers: %v\n", e.Headers)
+				//}
+				messageCount = messageCount + 1
+			case kafka.PartitionEOF:
+				fmt.Printf("%% Reached %v\n", e)
+			case kafka.Error:
+				fmt.Fprintf(os.Stderr, "%% Error: %v\n", e)
+				run = false
+			default:
+				log.Printf("Consumed: %d\n", messageCount)
+				fmt.Printf("Ignored %v\n", e)
+			}
 		}
 	}
-
-	if consumerMessageCount == producerMessageCount {
-		log.Printf("Received: %d \n", consumerMessageCount)
-	} else {
-		log.Printf("ERROR: produced %d and consumed %d \n", producerMessageCount, consumerMessageCount)
-	}
-
-	wait := make(chan bool)
-	<-wait
 
 }
 
@@ -346,4 +378,101 @@ func decodeBinary(binary []byte) ([]byte, error) {
 	}
 
 	return textual, err
+}
+
+func main() {
+	producerWorkers := 1
+	consumerWorkers := 1
+	// TODO - 10000 is the minimum number of messages, otherwise the consumers hang... not sure why
+	totalMessages := 100000
+	numPartitions := 1
+	replicationFactor := 1
+	topic := "xproducers-" + strconv.Itoa(producerWorkers) + "_partitions-" + strconv.Itoa(numPartitions) + "_repFactor-" + strconv.Itoa(replicationFactor)
+
+	//done := make(chan bool)
+
+	createTopic(topic, numPartitions, replicationFactor)
+
+	log.Printf("Topic: %s\n", topic)
+	log.Printf("Producers: %d\n", producerWorkers)
+	log.Printf("Consumers: %d\n", consumerWorkers)
+	log.Printf("Total Messages: %d \n", totalMessages)
+	/*producerResult := make([]<-chan int, producerWorkers)
+	messages := make(chan []byte, producerWorkers)
+	for i := range producerResult {
+		producerResult[i] = make(<-chan int)
+		//producerResult[i] = produce(messages, topic, i)
+		produce(messages, topic, i)
+	}
+
+	/*consumerResult := make([]<-chan int, consumerWorkers)
+	go func() {
+		for i := range consumerResult {
+			consumerResult[i] = make(<-chan int, consumerWorkers)
+			consumerResult[i] = consume(done, topic, i)
+		}
+	}()*/
+
+	/*go func() {
+		defer close(messages)
+		binary, err := encodeBinary()
+		if err != nil {
+			log.Printf("error creating binary")
+			return
+		}
+		//for i := 0; i < totalMessages; i++ {
+		for {
+			messages <- binary
+		}
+	}()*/
+
+	/*in := merge(done, producerResult...)
+	producerMessageCount := 0
+	// waits until all channels close or close(done)
+	for range in {
+		producerMessageCount = producerMessageCount + 1
+	}
+	log.Printf("Produced: %d\n", producerMessageCount)*/
+
+	simpleProducer(topic)
+	simpleConsumer(topic)
+
+	/*for i := 0; i < producerWorkers; i++ {
+		go func() {
+			simpleProducer(topic)
+		}()
+	}
+	for i := 0; i < consumerWorkers; i++ {
+		go func() {
+			simpleConsumer(topic)
+		}()
+	}
+	<-done
+	*/
+
+	/*out := merge(done, consumerResult...)
+	consumerMessageCount := 0
+	run := true
+	for run {
+		select {
+		case <-out:
+			consumerMessageCount = consumerMessageCount + 1
+			if producerMessageCount == consumerMessageCount {
+				close(done)
+				run = false
+			}
+		// timeout all go routines to avoid hanging
+		case <-time.After(60 * time.Second):
+			log.Printf("Timed out waiting for results")
+			close(done)
+			run = false
+		}
+	}
+
+	if consumerMessageCount == producerMessageCount {
+		log.Printf("Consumed: %d \n", consumerMessageCount)
+	} else {
+		log.Printf("ERROR: produced %d and consumed %d \n", producerMessageCount, consumerMessageCount)
+	}*/
+
 }
